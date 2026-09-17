@@ -1,0 +1,44 @@
+# Optional Blueprint for NEW services. For your existing service use docs/SEPARATE_DEPLOYMENT.md.
+services:
+  - type: web
+    name: stylesync-erp
+    runtime: node
+    plan: free
+    buildCommand: npm ci --prefix server && node scripts/check-node.mjs
+    startCommand: node server/index.mjs
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.19.0
+      - key: HOST
+        value: 0.0.0.0
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: ERP_ONLY
+        value: "true"
+      - key: COMMERCE_API_SECRET
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: product-images
+  - type: web
+    name: stylesync-shop
+    runtime: node
+    plan: free
+    buildCommand: node scripts/check-node.mjs
+    startCommand: node server/storefront.mjs
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.19.0
+      - key: HOST
+        value: 0.0.0.0
+      - key: ERP_API_URL
+        sync: false
+      - key: COMMERCE_API_SECRET
+        sync: false
