@@ -1,3 +1,7 @@
+## Email verification and password recovery
+
+See [docs/EMAIL_SETUP.md](docs/EMAIL_SETUP.md) for required email provider settings and deployment steps. Deploy both services. Existing accounts must verify after email authentication is enabled.
+
 # ShopLink ERP + Commerce — local and Render Free
 
 **Separate ERP + customer websites:** start with [docs/SEPARATE_DEPLOYMENT.md](docs/SEPARATE_DEPLOYMENT.md). Two services communicate through authenticated HTTP APIs; only the ERP service has database credentials.

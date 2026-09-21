@@ -1,3 +1,4 @@
+import {createEmailAuth,configuredMailer} from './email-auth.mjs';
 import http from 'node:http';
 import {commerceRoutes} from './commerce-routes.mjs';
 import { openDatabase } from './database.mjs';
@@ -26,6 +27,11 @@ function commerceClient(req){
 const DATA = process.env.DATA_DIR || path.join(ROOT, 'data'), UPLOADS = path.join(DATA, 'uploads');
 const db = await openDatabase(ROOT, DATA);
 const images = createImageStorage(UPLOADS);
+const emailEnabled=process.env.EMAIL_AUTH_ENABLED==='true';
+function emailOrigin(value){const u=new URL(value);if(u.username||u.password||u.pathname!=='/'||u.search||u.hash|| (u.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(u.hostname)))throw new Error('Email link origins must be HTTPS origins, without paths.');return u.origin}
+const emailAuth=createEmailAuth(db,{enabled:emailEnabled,erpOrigin:emailOrigin(ORIGIN),storeOrigin:emailOrigin(process.env.STOREFRONT_URL||(!ERP_ONLY?ORIGIN:'http://localhost:3001')),sendMail:emailEnabled?configuredMailer():null});
+if(emailEnabled&&ERP_ONLY&&!process.env.STOREFRONT_URL)throw new Error('Set STOREFRONT_URL before enabling email verification.');
+
 const scrypt = promisify(scryptCallback), hash = v => createHash('sha256').update(v).digest('hex');
 const fail = (m, status = 400) => { throw Object.assign(new Error(m), { status }); };
 const text = (v, max = 300) => String(v ?? '').trim().slice(0, max);
@@ -45,7 +51,7 @@ async function save(id, state, revision) { const data = JSON.stringify(state); i
 const cookies = req => Object.fromEntries((req.headers.cookie || '').split(';').filter(x => x.includes('=')).map(x => { const [k, ...v] = x.trim().split('='); return [k, v.join('=')]; }));
 const cookieName = kind => kind === 'customer' ? 'shop_session' : 'erp_session';
 async function session(req, kind = 'erp', optional = false) { const token = cookies(req)[cookieName(kind)]; const u = token ? await db.prepare('SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.hash=? AND s.expires_at>? AND u.kind=?').get(hash(token), Date.now(), kind) : null; if (!u && !optional)
-    fail('Please sign in', 401); return u; }
+    fail('Please sign in', 401); if(u&&emailEnabled&&!await emailAuth.verified(u)){if(optional)return null;fail('Verify your email before signing in. Use Resend verification email on the login page.',403)} return u; }
 async function identity(req) { const u = await session(req); if (u.role === 'Owner')
     return { userId: u.id, email: u.email, workspace: u.workspace, role: 'Owner', shop: null, profile: u }; const g = await db.prepare("SELECT * FROM access WHERE user_id=? AND email=? AND workspace=? AND status='active'").get(u.id, u.email, u.workspace); if (!g || !['Manager', 'Cashier'].includes(g.role))
     fail('Your staff access is no longer active. Contact your shop owner.', 403); return { userId: u.id, email: u.email, workspace: g.workspace, role: g.role, shop: g.shop, profile: u }; }
@@ -121,6 +127,14 @@ async function api(req, res, url) {
             await identity(req);
         return send(res, { user: safeUser(u) });
     }
+    if (['/api/auth/forgot-password','/api/auth/resend-verification','/api/auth/verify-email','/api/auth/reset-password'].includes(route) && req.method==='POST') {
+        throttle(req,'email-auth',60);
+        const p=await json(req),kind=p.kind==='customer'?'customer':'erp';
+        if(route.endsWith('/forgot-password')||route.endsWith('/resend-verification'))return send(res,await emailAuth.request(kind,email(p.email),route.endsWith('/forgot-password')?'reset':'verify'));
+        const purpose=route.endsWith('/reset-password')?'reset':'verify';
+        const next=purpose==='reset'?await passwordHash(p.newPassword):undefined;
+        return send(res,await emailAuth.consume(kind,p.token,purpose,next));
+    }
     if (route === '/api/auth/register' && req.method === 'POST') {
         throttle(req, 'register', 20);
         const p = await json(req);
@@ -158,6 +172,7 @@ async function api(req, res, url) {
             await db.prepare('INSERT INTO users(id,kind,email,full_name,phone,address,password_hash,role,workspace,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(uid, kind, mail, fields.fullName, fields.phone, text(p.address, 500), pass, role, workspace, now);
         });
         const u = await db.prepare('SELECT * FROM users WHERE id=?').get(uid);
+        if(emailEnabled){await emailAuth.request(kind,mail,'verify');return send(res,{verificationRequired:true,message:'Account created. Check your email to verify before signing in. If no email arrives, use Resend verification email.'},201)}
         await setSession(res, u);
         return send(res, { user: safeUser(u) }, 201);
     }
@@ -169,6 +184,7 @@ async function api(req, res, url) {
         const valid = await checkPassword(p.password, u?.password_hash || '00000000000000000000000000000000:' + ('0'.repeat(128)));
         if (!u || !valid)
             fail('Email or password is incorrect', 401);
+        if(emailEnabled&&!await emailAuth.verified(u))return send(res,{error:'Verify your email before signing in. Use Resend verification email below.',verificationRequired:true},403);
         if (u.role === 'Staff' && !await db.prepare("SELECT email FROM access WHERE user_id=? AND status='active'").get(u.id))
             fail('Your staff access is no longer active', 403);
         await setSession(res, u);

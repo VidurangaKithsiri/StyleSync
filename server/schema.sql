@@ -10,4 +10,10 @@ CREATE INDEX IF NOT EXISTS idx_integrations_workspace ON integrations(workspace)
 CREATE TABLE IF NOT EXISTS customer_orders(customer_id TEXT NOT NULL,workspace TEXT NOT NULL,order_id TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(customer_id,workspace,order_id));
 CREATE TABLE IF NOT EXISTS checkouts(customer_id TEXT NOT NULL,request_id TEXT NOT NULL,signature TEXT NOT NULL,response TEXT NOT NULL,PRIMARY KEY(customer_id,request_id));
 CREATE TABLE IF NOT EXISTS uploads(filename TEXT PRIMARY KEY,workspace TEXT NOT NULL,mime TEXT NOT NULL,size INTEGER NOT NULL,created_at TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS email_verified(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,email TEXT NOT NULL,verified_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS email_tokens(hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,email TEXT NOT NULL,purpose TEXT NOT NULL,expires_at BIGINT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_email_tokens_user ON email_tokens(user_id);
+CREATE TABLE IF NOT EXISTS email_cooldowns(slot TEXT PRIMARY KEY,until_ms BIGINT NOT NULL);
+
 PRAGMA user_version=1;

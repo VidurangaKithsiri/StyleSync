@@ -13,6 +13,12 @@ CREATE TABLE IF NOT EXISTS customer_orders(customer_id TEXT NOT NULL,workspace T
 CREATE TABLE IF NOT EXISTS checkouts(customer_id TEXT NOT NULL,request_id TEXT NOT NULL,signature TEXT NOT NULL,response TEXT NOT NULL,PRIMARY KEY(customer_id,request_id));
 CREATE TABLE IF NOT EXISTS uploads(filename TEXT PRIMARY KEY,workspace TEXT NOT NULL,mime TEXT NOT NULL,size INTEGER NOT NULL,created_at TEXT NOT NULL);
 
+
+CREATE TABLE IF NOT EXISTS email_verified(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,email TEXT NOT NULL,verified_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS email_tokens(hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,email TEXT NOT NULL,purpose TEXT NOT NULL,expires_at BIGINT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_email_tokens_user ON email_tokens(user_id);
+CREATE TABLE IF NOT EXISTS email_cooldowns(slot TEXT PRIMARY KEY,until_ms BIGINT NOT NULL);
+
 -- Keep account and business tables outside the public Data API.
 REVOKE ALL ON ALL TABLES IN SCHEMA shoplink FROM PUBLIC;
 DO $$ BEGIN IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='anon') THEN EXECUTE 'REVOKE ALL ON SCHEMA shoplink FROM anon, authenticated'; EXECUTE 'REVOKE ALL ON ALL TABLES IN SCHEMA shoplink FROM anon, authenticated'; END IF; END $$;
